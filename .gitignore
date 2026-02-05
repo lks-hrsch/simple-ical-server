@@ -1,8 +1,9 @@
 # extra stuff
 .direnv/
 .venv/
-data/
+data/*
 !data/.keep
+!test/data/*
 
 # Created by https://www.toptal.com/developers/gitignore/api/python
 # Edit at https://www.toptal.com/developers/gitignore?templates=python
