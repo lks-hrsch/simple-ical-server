@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Response
 
-from src.ical_utils import csv_to_ical
 from src.settings import settings
+from src.utils.ical import csv_to_ical
 
 router = APIRouter()
 
