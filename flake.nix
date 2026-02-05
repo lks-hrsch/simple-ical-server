@@ -110,6 +110,7 @@
               virtualenv
               pkgs.uv
               pkgs.ruff
+              pkgs.pre-commit
             ];
             env = {
               PYTHONPATH = ".";
@@ -123,6 +124,9 @@
               # Link the nix-built virtualenv to .venv for IDE support
               rm -rf .venv
               ln -s ${virtualenv} .venv
+
+              # Install pre-commit hooks
+              pre-commit install
             '';
           };
         }
