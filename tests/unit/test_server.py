@@ -1,6 +1,18 @@
+from pathlib import Path
+
+import pytest
 from fastapi.testclient import TestClient
 
+from src import main
 from src.main import app
+
+
+@pytest.fixture(autouse=True)
+def mock_data_dir(monkeypatch):
+    """Override DATA_DIR to use test data."""
+    test_data_path = Path(__file__).parent.parent / "data"
+    monkeypatch.setattr(main, "DATA_DIR", test_data_path)
+
 
 client = TestClient(app)
 
