@@ -1,5 +1,7 @@
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.settings import settings
+
 
 class CSVEntry(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -10,4 +12,4 @@ class CSVEntry(BaseModel):
     location: str
     name: str
     description: str
-    timezone: str = "Europe/Berlin"  # Default timezone
+    timezone: str = Field(default_factory=lambda: settings.tz)

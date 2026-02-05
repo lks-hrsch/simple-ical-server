@@ -27,4 +27,12 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixos-unstable
       - name: Run tests with Nix
-        run: nix develop --command pytest --cov=src --cov-report=term-missing
+        run: |
+          nix develop --command pytest --cov=src --cov-report=xml --cov-report=term-missing
+      
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          fail_ci_if_error: true

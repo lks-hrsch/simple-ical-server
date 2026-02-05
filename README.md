@@ -1,6 +1,7 @@
 # simple-ical-server
 
 [![Test](https://github.com/lks-hrsch/simple-ical-server/actions/workflows/test.yml/badge.svg)](https://github.com/lks-hrsch/simple-ical-server/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/lks-hrsch/simple-ical-server/graph/badge.svg)](https://codecov.io/gh/lks-hrsch/simple-ical-server)
 [![Build](https://github.com/lks-hrsch/simple-ical-server/actions/workflows/build.yml/badge.svg)](https://github.com/lks-hrsch/simple-ical-server/actions/workflows/build.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
@@ -12,11 +13,13 @@ A lightweight Python server built with **FastAPI** that dynamically generates an
 ## Features
 
 - **Dynamic iCal Generation**: Automatically converts CSV files in the `data/` directory to standard iCal format.
+- **All-Day Events**: Supports all-day events by setting the duration to `1d` or `2d` (ignores the time column).
 - **Timezone Awareness**: Supports localized event times (default: `Europe/Berlin`) using `pytz`.
 - **Modern Toolchain**: 
   - Managed with [uv](https://github.com/astral-sh/uv) for high-performance dependency management.
   - Reproducible development environments with [Nix Flakes](https://nixos.org/) and `uv2nix`.
   - Pinned to **Python 3.13**.
+  - Configuration via **Pydantic Settings** (supports `.env` files and environment variables).
 - **CI/CD Driven**:
   - **GitHub Actions**: Automated testing and linting via Nix on every push.
   - **Docker Ready**: Multi-arch builds (`amd64`, `arm64`) triggered by version tags.
@@ -66,12 +69,20 @@ CSV files should be placed in the `data/` directory. The filename becomes the ca
 ```csv
 date,time,duration,location,name,description,timezone
 10.05.2024,09:00,30min,Workplace,Emma Müller,Bring muffins for the team,Europe/Berlin
+12.05.2024,00:00,1d,Everywhere,Holiday,A full day holiday,Europe/Berlin
 ```
 
 - `date`: `%d.%m.%Y`
-- `time`: `%H:%M`
-- `duration`: e.g., `30min`, `1h`
-- `timezone`: Optional (defaults to `Europe/Berlin`)
+- `time`: `%H:%M` (ignored for all-day events)
+- `duration`: e.g., `30min`, `1h`, `1d`, `2d`
+- `timezone`: Optional (defaults to the `TZ` environment variable or `Europe/Berlin`)
+
+## Configuration
+
+The application uses **Pydantic Settings**. You can configure it via environment variables or a `.env` file:
+
+- `TZ`: The default timezone for events (default: `Europe/Berlin`).
+- `DATA_DIR`: The directory containing CSV files (default: `data`).
 
 ### Running Tests
 
