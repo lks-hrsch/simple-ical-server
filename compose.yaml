@@ -1,0 +1,14 @@
+services:
+  app:
+    image: ghcr.io/lks-hrsch/simple-ical-server:latest
+    build: .
+    container_name: simple-ical-server
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - TZ=Europe/Berlin
+      - DEFAULT_PLACE=Germany
+      - GEOCODE_ENABLED=True
+    restart: unless-stopped

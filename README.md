@@ -12,6 +12,9 @@ A lightweight Python server built with **FastAPI** that dynamically generates an
 
 ## Features
 
+- **Automatic Geocoding**: Resolves addresses to coordinates using **OpenStreetMap (Nominatim)**.
+- **Structured Locations**: Adds `GEO` and `X-APPLE-STRUCTURED-LOCATION` for one-tap map navigation in iOS/macOS/Android calendars.
+- **Privacy Controls**: Includes a global geocoding kill switch and dynamic `User-Agent` management.
 - **Dynamic iCal Generation**: Automatically converts CSV files in the `data/` directory to standard iCal format.
 - **All-Day Events**: Supports all-day events by setting the duration to `1d` or `2d` (ignores the time column).
 - **Timezone Awareness**: Supports localized event times (default: `Europe/Berlin`) using `pytz`.
@@ -38,8 +41,8 @@ A lightweight Python server built with **FastAPI** that dynamically generates an
 ### Development with Nix
 
 ```bash
-nix develop
 # This will set up a virtualenv in .venv and provide uv, ruff, etc.
+nix develop
 ```
 
 ### Manual Setup with uv
@@ -65,17 +68,20 @@ uv run uvicorn src.main:app --reload
 
 CSV files should be placed in the `data/` directory. The filename becomes the calendar name.
 
-**Format Example (`birthdays.csv`):**
+**Format Example (`events.csv`):**
 ```csv
-date,time,duration,location,name,description,timezone
-10.05.2024,09:00,30min,Workplace,Emma Müller,Bring muffins for the team,Europe/Berlin
-12.05.2024,00:00,1d,Everywhere,Holiday,A full day holiday,Europe/Berlin
+date,time,duration,location_name,location,place,name,description,timezone
+11.04.2026,09:00,8h,Bäckerei Musterstadt,Musterstraße 123 12345 Musterstadt,Germany,Frühstücks-Spezial,Leckere Croissants für alle!,Europe/Berlin
+12.05.2024,00:00,1d,,Schlossgarten,Germany,Feiertag,Ein ganzer Tag Entspannung,Europe/Berlin
 ```
 
 - `date`: `%d.%m.%Y`
 - `time`: `%H:%M` (ignored for all-day events)
 - `duration`: e.g., `30min`, `1h`, `1d`, `2d`
-- `timezone`: Optional (defaults to the `TZ` environment variable or `Europe/Berlin`)
+- `location_name`: Optional explicit venue name (e.g., "Bäckerei"). Falls back to `name` if empty.
+- `location`: Street and ZIP/City.
+- `place`: Optional (defaults to `DEFAULT_PLACE`, e.g., "Germany").
+- `timezone`: Optional (defaults to `TZ` setting or `Europe/Berlin`)
 
 ## Configuration
 
@@ -83,6 +89,8 @@ The application uses **Pydantic Settings**. You can configure it via environment
 
 - `TZ`: The default timezone for events (default: `Europe/Berlin`).
 - `DATA_DIR`: The directory containing CSV files (default: `data`).
+- `DEFAULT_PLACE`: Default country/region appended to addresses for geocoding accuracy (default: `Germany`).
+- `GEOCODE_ENABLED`: Set to `False` to disable all external network calls for geocoding (default: `True`).
 
 ### Running Tests
 
@@ -112,8 +120,13 @@ This project is licensed under the **GNU Affero General Public License v3.0**. S
 
 ### Docker Compose (Recommended)
 
-Run the server with the `data/` directory mounted as a volume:
+Run the server with the `data/` directory mounted as a volume. By default, it will attempt to use the pre-built image from GHCR:
 
+```bash
+docker compose up
+```
+
+Alternatively, to build it locally:
 ```bash
 docker compose up --build
 ```
@@ -122,9 +135,9 @@ This allows you to update CSV files in `data/` without rebuilding the image.
 
 ### Direct Docker Run
 
-If you prefer to run the container directly, you must mount the volume manually:
+You can pull and run the image directly from GHCR:
 
 ```bash
-docker build -t simple-ical-server .
-docker run -p 8000:8000 -v $(pwd)/data:/app/data simple-ical-server
+docker pull ghcr.io/lks-hrsch/simple-ical-server:latest
+docker run -p 8000:8000 -v $(pwd)/data:/app/data ghcr.io/lks-hrsch/simple-ical-server:latest
 ```
