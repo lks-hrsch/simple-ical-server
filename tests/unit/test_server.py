@@ -1,8 +1,12 @@
 from pathlib import Path
 from unittest.mock import patch
+from urllib.parse import quote
 
 import pytest
 from fastapi.testclient import TestClient
+from hypothesis import given
+from hypothesis import settings as hyp_settings
+from hypothesis import strategies as st
 
 from src.main import app
 from src.settings import settings
@@ -152,3 +156,79 @@ def test_get_calendar_not_found_detail():
     response = client.get("/nonexistent.ics")
     assert response.status_code == 404
     assert response.json()["detail"] == "Calendar not found"
+
+
+# ---------------------------------------------------------------------------
+# Path-traversal protection
+# ---------------------------------------------------------------------------
+
+
+def test_path_traversal_dot_dot_substring_is_safe(monkeypatch, tmp_path):
+    """Names containing '..' as a *substring* (e.g. '..secret') are safe.
+
+    'f"{name}.csv"' constructs '..secret.csv', which resolves *inside*
+    data_dir — no traversal possible without a path separator.  The
+    resolve() guard is the real security boundary; the string check only
+    rejects explicit separator characters ('/' and '\\').
+    """
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    response = client.get("/..secret.ics")
+    # No '/' or '\\' in name → passes string check.  Resolves inside
+    # data_dir → passes resolve() check.  File doesn't exist → 404.
+    assert response.status_code == 404
+
+
+def test_path_traversal_only_dot_dot():
+    """A URL of '/../.ics' is normalised/rejected at the routing layer."""
+    response = client.get("/../.ics")
+    # httpx normalises '/../.ics' → '/.ics'; empty-name segment doesn't
+    # match /{name}.ics, so the router returns 404.  Either way no file
+    # is served — both 400 and 404 are acceptable safe responses.
+    assert response.status_code in (400, 404)
+
+
+def test_path_traversal_forward_slash_not_routed():
+    """URLs with literal '/' in the name won't match /{name}.ics at all → 404.
+    This is safe: the router never reaches get_calendar, so no file is served."""
+    response = client.get("/sub/dir.ics")
+    assert response.status_code == 404  # router doesn't match multi-segment paths
+
+
+def test_path_traversal_forward_slash_urlencoded():
+    """Starlette decodes %2F before routing, so encoded slashes also never reach the handler.
+    Both literal and percent-encoded slashes yield 404 — safe, no data is leaked."""
+    response = client.get("/sub%2Fdir.ics")
+    assert response.status_code == 404  # router decodes %2F → multi-segment → no match
+
+
+def test_path_traversal_backslash():
+    """Names containing '\\' must be rejected with 400 (Windows path-separator defence)."""
+    response = client.get("/back%5Cslash.ics")
+    assert response.status_code == 400
+
+
+def test_path_traversal_safe_name_stays_404(monkeypatch, tmp_path):
+    """A clean name that resolves inside data_dir but has no CSV returns 404, not 400."""
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    response = client.get("/safe_name.ics")
+    assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Hypothesis fuzz test
+# ---------------------------------------------------------------------------
+
+
+@hyp_settings(max_examples=500)
+@given(name=st.text(min_size=0, max_size=100))
+def test_path_traversal_fuzz(name):
+    """Any calendar name must yield 200, 400, or 404 — never 500 from the validation layer."""
+    response = client.get(f"/{quote(name, safe='')}.ics")
+    assert response.status_code in (200, 400, 404)
+    # Only '/' and '\\' are explicitly blocked with 400.
+    # '/' in the URL creates multiple path segments so the router returns 404
+    # before get_calendar runs — both outcomes are safe (no file served).
+    # '..' as a substring (no separator) is NOT blocked; the resolve() check
+    # inside the handler is the real security boundary.
+    if ("/" not in name) and ("\\" in name):
+        assert response.status_code == 400

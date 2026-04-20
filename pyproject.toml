@@ -29,6 +29,7 @@ extend-select = ["I"]
 
 [dependency-groups]
 dev = [
+    "hypothesis>=6.0.0",
     "ruff>=0.15.0",
     "semver>=3.0.4",
 ]
