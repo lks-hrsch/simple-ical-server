@@ -3,8 +3,9 @@
 Endpoints
 ---------
 GET /
-    Returns a JSON list of available calendar names derived from the
-    ``.csv`` files present in the configured data directory.
+    Returns a JSON object with a single key ``"calendars"`` whose value
+    is a list of calendar name strings derived from the ``.csv`` files
+    present in the configured data directory.
 
 GET /{name}.ics
     Generates and returns an iCal (``.ics``) file for the calendar whose

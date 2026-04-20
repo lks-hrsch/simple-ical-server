@@ -77,8 +77,8 @@ def format_address(address: str, place: str = "") -> str:
     Examples:
         >>> format_address("Musterstraße 1 12345 Berlin", "Germany")
         'Musterstraße 1, 12345 Berlin, Germany'
-        >>> format_address("Musterstraße 1, 12345 Berlin", "Germany")
-        'Musterstraße 1, 12345 Berlin, Germany'
+        >>> format_address("Musterstraße 1, 12345 Berlin")
+        'Musterstraße 1, 12345 Berlin'
         >>> format_address("", "Germany")
         'Germany'
     """

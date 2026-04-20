@@ -29,7 +29,7 @@ def csv_to_ical(csv_path: Path, calendar_name: str) -> bytes:
     and the row contains an address.
 
     Args:
-        csv_path: Absolute path to the ``.csv`` file to convert.
+        csv_path: Path to the ``.csv`` file to convert (absolute or relative).
         calendar_name: Human-readable calendar name embedded in the
             ``X-WR-CALNAME`` property and used as part of the stable UID
             seed for every event.
