@@ -18,7 +18,7 @@ GET /readyz
     Kubernetes-style readiness probe — returns ``{"status": "ready"}``
     when ``data_dir`` exists, is a directory, and is readable; returns
     ``{"status": "not ready", "reason": "..."}`` with HTTP 503 otherwise.
-    
+
 .. note::
     ``GET /{name}.ics`` validates ``name`` against path-traversal
     sequences before constructing the file path.

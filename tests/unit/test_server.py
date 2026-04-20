@@ -1,6 +1,6 @@
 from pathlib import Path
-from urllib.parse import quote
 from unittest.mock import patch
+from urllib.parse import quote
 
 import pytest
 from fastapi.testclient import TestClient
