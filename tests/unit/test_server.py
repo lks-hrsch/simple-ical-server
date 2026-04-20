@@ -1,5 +1,6 @@
 from pathlib import Path
 from urllib.parse import quote
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -27,10 +28,36 @@ def test_healthz():
     assert response.json() == {"status": "ok"}
 
 
-def test_readyz():
+def test_readyz_ready():
     response = client.get("/readyz")
     assert response.status_code == 200
     assert response.json() == {"status": "ready"}
+
+
+def test_readyz_not_ready_missing_dir(monkeypatch, tmp_path):
+    missing = tmp_path / "does_not_exist"
+    monkeypatch.setattr(settings, "data_dir", missing)
+    response = client.get("/readyz")
+    assert response.status_code == 503
+    assert response.json() == {"status": "not ready", "reason": "data_dir does not exist"}
+
+
+def test_readyz_not_ready_is_file(monkeypatch, tmp_path):
+    not_a_dir = tmp_path / "some_file.txt"
+    not_a_dir.write_text("not a directory")
+    monkeypatch.setattr(settings, "data_dir", not_a_dir)
+    response = client.get("/readyz")
+    assert response.status_code == 503
+    assert response.json() == {"status": "not ready", "reason": "data_dir is not a directory"}
+
+
+def test_readyz_not_ready_unreadable(monkeypatch, tmp_path):
+    """Simulate a directory that exists but fails the R_OK|X_OK access check."""
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    with patch("os.access", return_value=False):
+        response = client.get("/readyz")
+    assert response.status_code == 503
+    assert response.json() == {"status": "not ready", "reason": "data_dir is not readable"}
 
 
 def test_list_calendars():

@@ -15,15 +15,19 @@ GET /healthz
     Kubernetes-style liveness probe — always returns ``{"status": "ok"}``.
 
 GET /readyz
-    Kubernetes-style readiness probe — always returns
-    ``{"status": "ready"}``.
-
+    Kubernetes-style readiness probe — returns ``{"status": "ready"}``
+    when ``data_dir`` exists, is a directory, and is readable; returns
+    ``{"status": "not ready", "reason": "..."}`` with HTTP 503 otherwise.
+    
 .. note::
     ``GET /{name}.ics`` validates ``name`` against path-traversal
     sequences before constructing the file path.
 """
 
+import os
+
 from fastapi import APIRouter, HTTPException, Response
+from fastapi.responses import JSONResponse
 
 from src.settings import settings
 from src.utils.ical import csv_to_ical
@@ -124,11 +128,27 @@ async def healthz():
 
 @router.get("/readyz")
 async def readyz():
-    """Readiness check.
+    """Kubernetes readiness probe.
 
-    Returns:
-        ``{"status": "ready"}`` unconditionally.  Extend this handler
-        if readiness should depend on external dependencies (e.g.
-        confirming the data directory is mounted and readable).
+    Returns 200 when the application is ready to serve requests — specifically
+    when ``data_dir`` exists, is a directory, and is readable.  Returns 503
+    otherwise so that load-balancers and orchestrators can stop routing traffic
+    until the data volume is available.
     """
+    data_dir = settings.data_dir
+    if not data_dir.exists():
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not ready", "reason": "data_dir does not exist"},
+        )
+    if not data_dir.is_dir():
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not ready", "reason": "data_dir is not a directory"},
+        )
+    if not os.access(data_dir, os.R_OK | os.X_OK):
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not ready", "reason": "data_dir is not readable"},
+        )
     return {"status": "ready"}
