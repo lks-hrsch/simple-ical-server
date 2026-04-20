@@ -39,7 +39,7 @@ def _make_uid(name: str, date_str: str, time_str: str, calendar_name: str) -> st
     return f"{hashlib.md5(seed.encode()).hexdigest()}@{settings.project_name}"
 
 
-def _add_location_properties(event: Event, entry: CSVEntry) -> None:
+async def _add_location_properties(event: Event, entry: CSVEntry) -> None:
     """Populate location-related iCal properties on *event* from *entry*.
 
     Sets the ``LOCATION`` property and, when geocoding succeeds, also
@@ -60,7 +60,7 @@ def _add_location_properties(event: Event, entry: CSVEntry) -> None:
     if not entry.location:
         return
 
-    coords = get_coordinates(full_address)
+    coords = await get_coordinates(full_address)
     if not coords:
         return
 
@@ -103,7 +103,7 @@ def _add_time_properties(event: Event, entry: CSVEntry) -> None:
         event.add("dtend", start_dt + duration)
 
 
-def _build_event(entry: CSVEntry, calendar_name: str) -> Event:
+async def _build_event(entry: CSVEntry, calendar_name: str) -> Event:
     """Construct a single ``VEVENT`` component from a parsed CSV row.
 
     Args:
@@ -120,13 +120,13 @@ def _build_event(entry: CSVEntry, calendar_name: str) -> Event:
     event.add("dtstamp", datetime.now(pytz.utc))
     event.add("uid", _make_uid(entry.name, entry.date_str, entry.time_str, calendar_name))
 
-    _add_location_properties(event, entry)
+    await _add_location_properties(event, entry)
     _add_time_properties(event, entry)
 
     return event
 
 
-def csv_to_ical(csv_path: Path, calendar_name: str) -> bytes:
+async def csv_to_ical(csv_path: Path, calendar_name: str) -> bytes:
     """Convert a CSV calendar file into an iCal-formatted byte string.
 
     Each row in the CSV file is mapped to a ``VEVENT`` component inside a
@@ -172,6 +172,6 @@ def csv_to_ical(csv_path: Path, calendar_name: str) -> bytes:
         reader = csv.DictReader(csvfile)
         for row in reader:
             entry = CSVEntry(**row)
-            cal.add_component(_build_event(entry, calendar_name))
+            cal.add_component(await _build_event(entry, calendar_name))
 
     return cal.to_ical()
