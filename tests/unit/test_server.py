@@ -100,7 +100,7 @@ def test_list_calendars_empty_data_dir(monkeypatch, tmp_path):
 
 
 def test_get_calendar_content_type_is_text_calendar():
-    """Verify Content-Type header is exactly text/calendar."""
+    """Verify Content-Type header starts with text/calendar (charset may be appended by FastAPI)."""
     response = client.get("/birthdays.ics")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/calendar")
@@ -126,4 +126,5 @@ def test_get_calendar_ics_uid_present():
 
 def test_get_calendar_not_found_detail():
     response = client.get("/nonexistent.ics")
+    assert response.status_code == 404
     assert response.json()["detail"] == "Calendar not found"

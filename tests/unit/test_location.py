@@ -1,4 +1,5 @@
 import re
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -190,32 +191,22 @@ def test_get_coordinates_geocoder_raises_exception():
 
 
 def test_parse_duration_minutes():
-    from datetime import timedelta
-
     assert parse_duration("30min") == timedelta(minutes=30)
 
 
 def test_parse_duration_hours():
-    from datetime import timedelta
-
     assert parse_duration("2h") == timedelta(hours=2)
 
 
 def test_parse_duration_days():
-    from datetime import timedelta
-
     assert parse_duration("3d") == timedelta(days=3)
 
 
 def test_parse_duration_zero_minutes():
-    from datetime import timedelta
-
     assert parse_duration("0min") == timedelta(minutes=0)
 
 
 def test_parse_duration_unknown_format_returns_zero():
-    from datetime import timedelta
-
     # Unrecognized format (no recognised suffix) should return timedelta(minutes=0)
     # Note: strings ending in 'd', 'h', or 'min' are handled by those branches;
     # a truly unrecognised suffix (e.g. 's') falls through to the default.
@@ -226,15 +217,11 @@ def test_parse_duration_unknown_format_returns_zero():
 def test_parse_duration_invalid_suffix_ending_in_d_raises():
     # A string ending in 'd' with a non-integer prefix raises ValueError —
     # this documents the current behaviour of the source code.
-    import pytest
-
     with pytest.raises(ValueError):
         parse_duration("invalidd")
 
 
 def test_parse_duration_large_value():
-    from datetime import timedelta
-
     assert parse_duration("1440min") == timedelta(minutes=1440)
     assert parse_duration("24h") == timedelta(hours=24)
 
@@ -283,14 +270,10 @@ def test_uid_deterministic_for_same_event(mock_coords, tmp_path):
 
 
 @patch("src.utils.ical.get_coordinates")
-def test_geocoding_disabled_no_geo_field(mock_coords, tmp_path, monkeypatch):
-    from src.settings import settings
-
-    monkeypatch.setattr(settings, "geocode_enabled", False)
-    get_coordinates.cache_clear()
-
-    # Use the real function (disabled), don't mock it
-    mock_coords.side_effect = lambda addr: None
+def test_geocoding_disabled_no_geo_field(mock_coords, tmp_path):
+    """When get_coordinates returns None (e.g. geocoding disabled), GEO and
+    X-APPLE-STRUCTURED-LOCATION fields must not appear on the event."""
+    mock_coords.return_value = None
 
     csv_file = tmp_path / "test.csv"
     csv_file.write_text(
@@ -329,7 +312,7 @@ def test_timed_event_has_datetime_dtstart(mock_coords, tmp_path):
 
 @patch("src.utils.ical.get_coordinates")
 def test_allday_event_has_date_dtstart(mock_coords, tmp_path):
-    from datetime import date
+    from datetime import date, datetime
 
     mock_coords.return_value = None
 
@@ -345,7 +328,7 @@ def test_allday_event_has_date_dtstart(mock_coords, tmp_path):
 
     dtstart = event.get("DTSTART").dt
     assert isinstance(dtstart, date)
-    assert not isinstance(dtstart, __import__("datetime").datetime)
+    assert not isinstance(dtstart, datetime)
 
 
 @patch("src.utils.ical.get_coordinates")
