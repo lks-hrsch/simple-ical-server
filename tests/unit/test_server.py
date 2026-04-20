@@ -83,10 +83,7 @@ def test_get_calendar_500_on_corrupt_csv(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "data_dir", tmp_path)
     # Write a file that will cause a parse error (bad date format)
     bad_csv = tmp_path / "bad.csv"
-    bad_csv.write_text(
-        "date,time,duration,location,name,description\n"
-        "not-a-date,nottime,1h,Somewhere,Bad Event,Desc\n"
-    )
+    bad_csv.write_text("date,time,duration,location,name,description\nnot-a-date,nottime,1h,Somewhere,Bad Event,Desc\n")
     response = client.get("/bad.ics")
     assert response.status_code == 500
 

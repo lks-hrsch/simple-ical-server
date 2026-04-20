@@ -253,8 +253,7 @@ def test_uid_deterministic_for_same_event(mock_coords, tmp_path):
     mock_coords.return_value = None
 
     csv_content = (
-        "date,time,duration,location,name,description\n"
-        "05.06.2025,14:00,2h,Somewhere,My Event,Some description\n"
+        "date,time,duration,location,name,description\n05.06.2025,14:00,2h,Somewhere,My Event,Some description\n"
     )
 
     csv_file = tmp_path / "test.csv"
@@ -277,8 +276,7 @@ def test_geocoding_disabled_no_geo_field(mock_coords, tmp_path):
 
     csv_file = tmp_path / "test.csv"
     csv_file.write_text(
-        "date,time,duration,location,name,description\n"
-        "10.10.2025,09:00,1h,Berlin Mitte,Some Event,Details\n"
+        "date,time,duration,location,name,description\n10.10.2025,09:00,1h,Berlin Mitte,Some Event,Details\n"
     )
 
     ical_bytes = csv_to_ical(csv_file, "Test Cal")
@@ -297,8 +295,7 @@ def test_timed_event_has_datetime_dtstart(mock_coords, tmp_path):
 
     csv_file = tmp_path / "test.csv"
     csv_file.write_text(
-        "date,time,duration,location,name,description\n"
-        "15.03.2025,08:30,90min,Office,Morning Standup,Daily sync\n"
+        "date,time,duration,location,name,description\n15.03.2025,08:30,90min,Office,Morning Standup,Daily sync\n"
     )
 
     ical_bytes = csv_to_ical(csv_file, "Work")
@@ -317,10 +314,7 @@ def test_allday_event_has_date_dtstart(mock_coords, tmp_path):
     mock_coords.return_value = None
 
     csv_file = tmp_path / "test.csv"
-    csv_file.write_text(
-        "date,time,duration,location,name,description\n"
-        "25.12.2025,00:00,1d,,Christmas,Public holiday\n"
-    )
+    csv_file.write_text("date,time,duration,location,name,description\n25.12.2025,00:00,1d,,Christmas,Public holiday\n")
 
     ical_bytes = csv_to_ical(csv_file, "Holidays")
     cal = Calendar.from_ical(ical_bytes)
