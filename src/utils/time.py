@@ -36,9 +36,10 @@ def parse_duration(duration_str: str) -> timedelta:
         datetime.timedelta(days=1)
     """
     if duration_str.endswith("min"):
-        return timedelta(minutes=int(duration_str.replace("min", "")))
-    elif duration_str.endswith("h"):
-        return timedelta(hours=int(duration_str.replace("h", "")))
-    elif duration_str.endswith("d"):
-        return timedelta(days=int(duration_str.replace("d", "")))
+        return timedelta(minutes=int(duration_str.removesuffix("min")))
+    if duration_str.endswith("h"):
+        return timedelta(hours=int(duration_str.removesuffix("h")))
+    if duration_str.endswith("d"):
+        return timedelta(days=int(duration_str.removesuffix("d")))
+    # Unknown format — return zero duration as a safe fallback
     return timedelta(minutes=0)
