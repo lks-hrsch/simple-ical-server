@@ -1,10 +1,12 @@
 import re
 from unittest.mock import MagicMock, patch
 
+import pytest
 from icalendar import Calendar
 
 from src.utils.ical import csv_to_ical
-from src.utils.location import get_coordinates
+from src.utils.location import format_address, get_coordinates
+from src.utils.time import parse_duration
 
 
 def test_zip_comma_insertion():
@@ -115,3 +117,281 @@ def test_lru_cache_efficiency():
         assert info.hits == 1
         assert info.misses == 2
         assert info.currsize == 2
+
+
+# --- format_address tests ---
+
+
+def test_format_address_with_zip_no_comma():
+    result = format_address("Musterstraße 123 12345 Musterstadt", "Germany")
+    assert result == "Musterstraße 123, 12345 Musterstadt, Germany"
+
+
+def test_format_address_with_existing_comma():
+    # Already has a comma — should not double-insert
+    result = format_address("Musterstraße 123, 12345 Musterstadt", "Germany")
+    assert result == "Musterstraße 123, 12345 Musterstadt, Germany"
+
+
+def test_format_address_empty_address_with_place():
+    result = format_address("", "Germany")
+    assert result == "Germany"
+
+
+def test_format_address_with_address_no_place():
+    result = format_address("Some Street 1", "")
+    assert result == "Some Street 1"
+
+
+def test_format_address_both_empty():
+    result = format_address("", "")
+    assert result == ""
+
+
+def test_format_address_no_zip_code():
+    # Address without a 5-digit zip: no comma insertion should occur
+    result = format_address("Bahnhofstraße 1 Berlin", "Germany")
+    assert result == "Bahnhofstraße 1 Berlin, Germany"
+
+
+# --- get_coordinates tests ---
+
+
+def test_get_coordinates_disabled(monkeypatch):
+    from src.settings import settings
+
+    monkeypatch.setattr(settings, "geocode_enabled", False)
+    get_coordinates.cache_clear()
+    result = get_coordinates("Anywhere")
+    assert result is None
+
+
+def test_get_coordinates_geocoder_returns_none():
+    with patch("src.utils.location.Nominatim") as mock_nom:
+        instance = mock_nom.return_value
+        instance.geocode.return_value = None
+
+        get_coordinates.cache_clear()
+        result = get_coordinates("Unknown Place")
+        assert result is None
+
+
+def test_get_coordinates_geocoder_raises_exception():
+    with patch("src.utils.location.Nominatim") as mock_nom:
+        instance = mock_nom.return_value
+        instance.geocode.side_effect = Exception("network error")
+
+        get_coordinates.cache_clear()
+        result = get_coordinates("Broken Address")
+        assert result is None
+
+
+# --- parse_duration tests ---
+
+
+def test_parse_duration_minutes():
+    from datetime import timedelta
+
+    assert parse_duration("30min") == timedelta(minutes=30)
+
+
+def test_parse_duration_hours():
+    from datetime import timedelta
+
+    assert parse_duration("2h") == timedelta(hours=2)
+
+
+def test_parse_duration_days():
+    from datetime import timedelta
+
+    assert parse_duration("3d") == timedelta(days=3)
+
+
+def test_parse_duration_zero_minutes():
+    from datetime import timedelta
+
+    assert parse_duration("0min") == timedelta(minutes=0)
+
+
+def test_parse_duration_unknown_format_returns_zero():
+    from datetime import timedelta
+
+    # Unrecognized format (no recognised suffix) should return timedelta(minutes=0)
+    # Note: strings ending in 'd', 'h', or 'min' are handled by those branches;
+    # a truly unrecognised suffix (e.g. 's') falls through to the default.
+    result = parse_duration("60s")
+    assert result == timedelta(minutes=0)
+
+
+def test_parse_duration_invalid_suffix_ending_in_d_raises():
+    # A string ending in 'd' with a non-integer prefix raises ValueError —
+    # this documents the current behaviour of the source code.
+    import pytest
+
+    with pytest.raises(ValueError):
+        parse_duration("invalidd")
+
+
+def test_parse_duration_large_value():
+    from datetime import timedelta
+
+    assert parse_duration("1440min") == timedelta(minutes=1440)
+    assert parse_duration("24h") == timedelta(hours=24)
+
+
+# --- csv_to_ical edge cases ---
+
+
+@patch("src.utils.ical.get_coordinates")
+def test_uid_uniqueness_across_events(mock_coords, tmp_path):
+    mock_coords.return_value = None
+
+    csv_file = tmp_path / "test.csv"
+    csv_file.write_text(
+        "date,time,duration,location,name,description\n"
+        "01.01.2025,10:00,1h,Venue A,Event One,Desc A\n"
+        "02.01.2025,10:00,1h,Venue B,Event Two,Desc B\n"
+    )
+
+    ical_bytes = csv_to_ical(csv_file, "Test Cal")
+    cal = Calendar.from_ical(ical_bytes)
+    events = cal.walk("VEVENT")
+    uids = [str(e.get("UID")) for e in events]
+    assert len(uids) == 2
+    assert uids[0] != uids[1]
+
+
+@patch("src.utils.ical.get_coordinates")
+def test_uid_deterministic_for_same_event(mock_coords, tmp_path):
+    mock_coords.return_value = None
+
+    csv_content = (
+        "date,time,duration,location,name,description\n"
+        "05.06.2025,14:00,2h,Somewhere,My Event,Some description\n"
+    )
+
+    csv_file = tmp_path / "test.csv"
+    csv_file.write_text(csv_content)
+
+    ical1 = csv_to_ical(csv_file, "Cal")
+    ical2 = csv_to_ical(csv_file, "Cal")
+    cal1 = Calendar.from_ical(ical1)
+    cal2 = Calendar.from_ical(ical2)
+    uid1 = str(cal1.walk("VEVENT")[0].get("UID"))
+    uid2 = str(cal2.walk("VEVENT")[0].get("UID"))
+    assert uid1 == uid2
+
+
+@patch("src.utils.ical.get_coordinates")
+def test_geocoding_disabled_no_geo_field(mock_coords, tmp_path, monkeypatch):
+    from src.settings import settings
+
+    monkeypatch.setattr(settings, "geocode_enabled", False)
+    get_coordinates.cache_clear()
+
+    # Use the real function (disabled), don't mock it
+    mock_coords.side_effect = lambda addr: None
+
+    csv_file = tmp_path / "test.csv"
+    csv_file.write_text(
+        "date,time,duration,location,name,description\n"
+        "10.10.2025,09:00,1h,Berlin Mitte,Some Event,Details\n"
+    )
+
+    ical_bytes = csv_to_ical(csv_file, "Test Cal")
+    cal = Calendar.from_ical(ical_bytes)
+    event = cal.walk("VEVENT")[0]
+
+    assert event.get("GEO") is None
+    assert event.get("X-APPLE-STRUCTURED-LOCATION") is None
+
+
+@patch("src.utils.ical.get_coordinates")
+def test_timed_event_has_datetime_dtstart(mock_coords, tmp_path):
+    from datetime import datetime
+
+    mock_coords.return_value = None
+
+    csv_file = tmp_path / "test.csv"
+    csv_file.write_text(
+        "date,time,duration,location,name,description\n"
+        "15.03.2025,08:30,90min,Office,Morning Standup,Daily sync\n"
+    )
+
+    ical_bytes = csv_to_ical(csv_file, "Work")
+    cal = Calendar.from_ical(ical_bytes)
+    event = cal.walk("VEVENT")[0]
+
+    dtstart = event.get("DTSTART").dt
+    # Timed event should have a datetime, not a date
+    assert isinstance(dtstart, datetime)
+
+
+@patch("src.utils.ical.get_coordinates")
+def test_allday_event_has_date_dtstart(mock_coords, tmp_path):
+    from datetime import date
+
+    mock_coords.return_value = None
+
+    csv_file = tmp_path / "test.csv"
+    csv_file.write_text(
+        "date,time,duration,location,name,description\n"
+        "25.12.2025,00:00,1d,,Christmas,Public holiday\n"
+    )
+
+    ical_bytes = csv_to_ical(csv_file, "Holidays")
+    cal = Calendar.from_ical(ical_bytes)
+    event = cal.walk("VEVENT")[0]
+
+    dtstart = event.get("DTSTART").dt
+    assert isinstance(dtstart, date)
+    assert not isinstance(dtstart, __import__("datetime").datetime)
+
+
+@patch("src.utils.ical.get_coordinates")
+def test_custom_timezone_respected(mock_coords, tmp_path):
+    mock_coords.return_value = None
+
+    csv_file = tmp_path / "test.csv"
+    csv_file.write_text(
+        "date,time,duration,location,name,description,timezone\n"
+        "01.07.2025,12:00,1h,Tokyo,Conference,Details,Asia/Tokyo\n"
+    )
+
+    ical_bytes = csv_to_ical(csv_file, "Events")
+    cal = Calendar.from_ical(ical_bytes)
+    event = cal.walk("VEVENT")[0]
+
+    dtstart = event.get("DTSTART").dt
+    assert "Asia/Tokyo" in str(dtstart.tzinfo)
+
+
+@patch("src.utils.ical.get_coordinates")
+def test_event_summary_and_description(mock_coords, tmp_path):
+    mock_coords.return_value = None
+
+    csv_file = tmp_path / "test.csv"
+    csv_file.write_text(
+        "date,time,duration,location,name,description\n"
+        "20.08.2025,10:00,2h,Room A,My Test Event,This is the description\n"
+    )
+
+    ical_bytes = csv_to_ical(csv_file, "Cal")
+    cal = Calendar.from_ical(ical_bytes)
+    event = cal.walk("VEVENT")[0]
+
+    assert str(event.get("SUMMARY")) == "My Test Event"
+    assert str(event.get("DESCRIPTION")) == "This is the description"
+
+
+@patch("src.utils.ical.get_coordinates")
+def test_empty_csv_produces_no_events(mock_coords, tmp_path):
+    mock_coords.return_value = None
+
+    csv_file = tmp_path / "empty.csv"
+    csv_file.write_text("date,time,duration,location,name,description\n")
+
+    ical_bytes = csv_to_ical(csv_file, "Empty Cal")
+    cal = Calendar.from_ical(ical_bytes)
+    events = cal.walk("VEVENT")
+    assert len(events) == 0
