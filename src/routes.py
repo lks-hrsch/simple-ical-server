@@ -17,6 +17,10 @@ GET /healthz
 GET /readyz
     Kubernetes-style readiness probe — always returns
     ``{"status": "ready"}``.
+
+.. note::
+    ``GET /{name}.ics`` validates ``name`` against path-traversal
+    sequences before constructing the file path.
 """
 
 from fastapi import APIRouter, HTTPException, Response
@@ -61,18 +65,41 @@ async def get_calendar(name: str):
     Args:
         name: The calendar identifier, which must correspond to a file
             named ``{name}.csv`` inside the configured data directory.
+            Names containing ``/`` or ``\\`` are rejected immediately.
+            A secondary ``resolve()`` check ensures the constructed path
+            cannot escape ``data_dir`` even via symlinks or other
+            filesystem tricks.
 
     Returns:
         An HTTP response with ``Content-Type: text/calendar`` and the
         raw iCal bytes as the body.
 
     Raises:
+        HTTPException: 400 when ``name`` contains path separators or the
+            resolved path would escape the configured data directory.
         HTTPException: 404 when no CSV file with the given name exists.
         HTTPException: 500 when the CSV file exists but cannot be parsed
             or converted (the detail field contains the underlying error
             message).
     """
+    # Reject names containing path separators (the main traversal vector).
+    # Note: ".." alone is safe here because f"{name}.csv" = "...csv", which
+    # resolves inside data_dir.  The resolve() guard below handles symlinks
+    # and any other filesystem-level escape attempts.
+    if "/" in name or "\\" in name:
+        raise HTTPException(status_code=400, detail="Invalid calendar name")
+
     csv_path = settings.data_dir / f"{name}.csv"
+
+    # Defense in depth: resolved path must stay inside data_dir.
+    # Catches symlink traversal and any OS-specific path quirks.
+    try:
+        resolved = csv_path.resolve()
+        data_dir_resolved = settings.data_dir.resolve()
+        resolved.relative_to(data_dir_resolved)
+    except (ValueError, OSError, RuntimeError):
+        raise HTTPException(status_code=400, detail="Invalid calendar name")
+
     if not csv_path.exists():
         raise HTTPException(status_code=404, detail="Calendar not found")
 
