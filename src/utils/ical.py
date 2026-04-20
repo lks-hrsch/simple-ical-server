@@ -1,3 +1,11 @@
+"""Core iCal generation logic: converts a CSV calendar file to iCal bytes.
+
+The public API of this module is the single function :func:`csv_to_ical`.
+It reads a CSV file row-by-row, validates each row against the
+:class:`~src.models.CSVEntry` schema, builds a ``VEVENT`` component for
+every entry, and assembles them into a ``VCALENDAR`` payload.
+"""
+
 import csv
 import hashlib
 from datetime import datetime
@@ -13,6 +21,29 @@ from src.utils.time import parse_duration
 
 
 def csv_to_ical(csv_path: Path, calendar_name: str) -> bytes:
+    """Convert a CSV calendar file into an iCal (RFC 5545) byte string.
+
+    Reads *csv_path* row-by-row, validates each row with
+    :class:`~src.models.CSVEntry`, and builds one ``VEVENT`` component per
+    row.  Location geocoding is performed when ``GEOCODE_ENABLED`` is true
+    and the row contains an address.
+
+    Args:
+        csv_path: Absolute path to the ``.csv`` file to convert.
+        calendar_name: Human-readable calendar name embedded in the
+            ``X-WR-CALNAME`` property and used as part of the stable UID
+            seed for every event.
+
+    Returns:
+        The complete ``VCALENDAR`` payload serialised as UTF-8 bytes,
+        ready to be served with ``Content-Type: text/calendar``.
+
+    Raises:
+        FileNotFoundError: If *csv_path* does not exist.
+        csv.Error: If the file is not valid CSV.
+        pydantic.ValidationError: If a row cannot be parsed as
+            :class:`~src.models.CSVEntry`.
+    """
     cal = Calendar()
     cal.add("prodid", f"-//{settings.project_name}//mxm.dk//")
     cal.add("version", "2.0")
