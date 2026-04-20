@@ -35,10 +35,16 @@ def parse_duration(duration_str: str) -> timedelta:
         >>> parse_duration("1d")
         datetime.timedelta(days=1)
     """
-    if duration_str.endswith("min"):
-        return timedelta(minutes=int(duration_str.replace("min", "")))
-    elif duration_str.endswith("h"):
-        return timedelta(hours=int(duration_str.replace("h", "")))
-    elif duration_str.endswith("d"):
-        return timedelta(days=int(duration_str.replace("d", "")))
+    try:
+        if duration_str.endswith("min"):
+            return timedelta(minutes=int(duration_str.removesuffix("min")))
+        if duration_str.endswith("h"):
+            return timedelta(hours=int(duration_str.removesuffix("h")))
+        if duration_str.endswith("d"):
+            return timedelta(days=int(duration_str.removesuffix("d")))
+    except ValueError:
+        raise ValueError(
+            f"Invalid duration string {duration_str!r}: expected an integer followed by 'min', 'h', or 'd'."
+        ) from None
+    # Unknown format — return zero duration as a safe fallback
     return timedelta(minutes=0)

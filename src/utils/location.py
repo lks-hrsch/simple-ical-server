@@ -9,6 +9,12 @@ Note:
     and prohibits more than one request per second.  The ``user_agent``
     value is taken from :data:`src.settings.settings` so it can be
     configured via the ``USER_AGENT`` environment variable.
+
+    **Known limitation**: no rate-limiting is implemented.  When many
+    distinct addresses are geocoded in a single request (e.g. a large CSV
+    being served for the first time), requests may arrive at Nominatim
+    faster than one per second.  The LRU cache mitigates this for repeated
+    addresses but does not throttle the initial burst.
 """
 
 import re
