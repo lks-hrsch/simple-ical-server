@@ -24,6 +24,7 @@ GET /readyz
     sequences before constructing the file path.
 """
 
+import asyncio
 import os
 
 from fastapi import APIRouter, HTTPException, Response
@@ -108,7 +109,10 @@ async def get_calendar(name: str):
         raise HTTPException(status_code=404, detail="Calendar not found")
 
     try:
-        ical_content = csv_to_ical(csv_path, name)
+        # Run the synchronous CSV→iCal conversion (which may block on
+        # Nominatim rate-limiting) in a thread-pool worker so the async
+        # event loop stays responsive during geocoding delays.
+        ical_content = await asyncio.to_thread(csv_to_ical, csv_path, name)
         return Response(content=ical_content, media_type="text/calendar")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

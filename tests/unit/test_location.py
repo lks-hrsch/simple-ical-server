@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from icalendar import Calendar
 
+import src.utils.location as loc_module
 from src.utils.ical import csv_to_ical
 from src.utils.location import format_address, get_coordinates
 from src.utils.time import parse_duration
@@ -185,6 +186,106 @@ def test_get_coordinates_geocoder_raises_exception():
         get_coordinates.cache_clear()
         result = get_coordinates("Broken Address")
         assert result is None
+
+
+# --- Nominatim rate-limiting tests ---
+
+
+def test_rate_limiting_enforces_interval():
+    """_throttle_geocode sleeps for the remainder of the interval when called too soon.
+
+    _throttle_geocode calls time.monotonic() twice per invocation:
+    once to check elapsed time, once to record the call timestamp.
+    """
+    sleep_calls: list[float] = []
+
+    # Simulate: last call was at t=0, current time is t=0.3.
+    # Expected sleep = 1.0 - (0.3 - 0.0) = 0.7 s.
+    # monotonic returns: [0.3 (now), 1.0 (after sleep, to record new _last_geocode_time)]
+    with patch("src.utils.location.time.sleep", side_effect=lambda s: sleep_calls.append(s)):
+        with patch("src.utils.location.time.monotonic", side_effect=[0.3, 1.0]):
+            loc_module._last_geocode_time = 0.0
+            loc_module._throttle_geocode()
+
+    assert len(sleep_calls) == 1
+    assert abs(sleep_calls[0] - 0.7) < 0.01, f"Expected sleep ≈0.7 s, got {sleep_calls[0]}"
+
+
+def test_rate_limiting_no_sleep_when_interval_elapsed():
+    """_throttle_geocode must not sleep when enough time has already passed."""
+    sleep_calls: list[float] = []
+
+    # Simulate: last call at t=0, current time t=1.5 → no sleep needed.
+    # monotonic returns: [1.5 (now), 1.5 (record new timestamp)]
+    with patch("src.utils.location.time.sleep", side_effect=lambda s: sleep_calls.append(s)):
+        with patch("src.utils.location.time.monotonic", side_effect=[1.5, 1.5]):
+            loc_module._last_geocode_time = 0.0
+            loc_module._throttle_geocode()
+
+    assert sleep_calls == [], f"Expected no sleep, got {sleep_calls}"
+
+
+def test_rate_limiter_called_on_cache_miss():
+    """_throttle_geocode must be called exactly once per cache-miss geocode call."""
+    with patch("src.utils.location.Nominatim") as mock_nom:
+        instance = mock_nom.return_value
+        instance.geocode.side_effect = [
+            MagicMock(latitude=1.0, longitude=2.0),
+            MagicMock(latitude=3.0, longitude=4.0),
+        ]
+
+        get_coordinates.cache_clear()
+
+        with patch.object(loc_module, "_throttle_geocode") as mock_throttle:
+            get_coordinates("Address X")
+            get_coordinates("Address Y")
+
+        # Two distinct addresses → two cache misses → two throttle calls
+        assert mock_throttle.call_count == 2
+        assert instance.geocode.call_count == 2
+
+
+def test_rate_limiter_not_called_on_cache_hit():
+    """A second call for the same address (cache hit) must not invoke _throttle_geocode."""
+    with patch("src.utils.location.Nominatim") as mock_nom:
+        instance = mock_nom.return_value
+        instance.geocode.return_value = MagicMock(latitude=1.0, longitude=2.0)
+
+        get_coordinates.cache_clear()
+
+        with patch.object(loc_module, "_throttle_geocode") as mock_throttle:
+            get_coordinates("Same Address")  # cache miss → throttle called
+            get_coordinates("Same Address")  # cache hit → throttle NOT called
+
+        assert mock_throttle.call_count == 1  # only the first (cache-miss) call
+        assert instance.geocode.call_count == 1
+
+
+def test_rate_limiter_skipped_when_geocoding_disabled(monkeypatch):
+    """When geocoding is disabled, _throttle_geocode must never be called."""
+    from src.settings import settings
+
+    monkeypatch.setattr(settings, "geocode_enabled", False)
+    get_coordinates.cache_clear()
+
+    with patch.object(loc_module, "_throttle_geocode") as mock_throttle:
+        result = get_coordinates("Anywhere")
+
+    assert result is None
+    mock_throttle.assert_not_called()
+
+
+def test_first_geocode_call_does_not_sleep():
+    """The very first geocode call after module load must not incur a sleep."""
+    sleep_calls: list[float] = []
+    # Set _last_geocode_time to its initial module-load value
+    loc_module._last_geocode_time = -loc_module._MIN_GEOCODE_INTERVAL
+
+    with patch("src.utils.location.time.sleep", side_effect=lambda s: sleep_calls.append(s)):
+        with patch("src.utils.location.time.monotonic", return_value=0.0):
+            loc_module._throttle_geocode()
+
+    assert sleep_calls == [], f"First call should not sleep, got {sleep_calls}"
 
 
 # --- parse_duration tests ---
