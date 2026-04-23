@@ -1,38 +1,67 @@
 """Utilities for address formatting and geocoding via the Nominatim service.
 
-Geocoding results are cached in-process using :func:`functools.lru_cache`
-so that repeated lookups for the same address (common when many events
-share a venue) do not generate redundant HTTP requests to Nominatim.
+Geocoding results are cached in-process using a module-level dictionary so
+that repeated lookups for the same address (common when many events share a
+venue) do not generate redundant HTTP requests to Nominatim.
+
+A module-level asyncio lock enforces Nominatim's one-request-per-second
+policy even when multiple coroutines issue concurrent geocoding calls.  The
+throttle is applied only on cache misses, so cached lookups are unaffected.
 
 Note:
     Nominatim's usage policy requires a meaningful ``User-Agent`` string
     and prohibits more than one request per second.  The ``user_agent``
     value is taken from :data:`src.settings.settings` so it can be
     configured via the ``USER_AGENT`` environment variable.
-
-    **Known limitation**: no rate-limiting is implemented.  When many
-    distinct addresses are geocoded in a single request (e.g. a large CSV
-    being served for the first time), requests may arrive at Nominatim
-    faster than one per second.  The LRU cache mitigates this for repeated
-    addresses but does not throttle the initial burst.
 """
 
+import asyncio
 import re
-from functools import lru_cache
+import time
 
 from geopy.geocoders import Nominatim
 
 from src.settings import settings
 
+_geocode_lock = asyncio.Lock()
+_MIN_GEOCODE_INTERVAL: float = 1.0  # seconds — Nominatim policy
+# Initialise far enough in the past so the very first call never waits.
+# time.monotonic()'s epoch is undefined, so we can't use 0.0 safely.
+_last_geocode_time: float = -_MIN_GEOCODE_INTERVAL
+_geocode_cache: dict[str, tuple[float, float] | None] = {}
+_GEOCODE_CACHE_MAXSIZE: int = 128
 
-@lru_cache(maxsize=128)
-def get_coordinates(address: str) -> tuple[float, float] | None:
+
+async def _throttle_geocode() -> None:
+    """Block until at least 1 second has elapsed since the last Nominatim call.
+
+    Uses a module-level asyncio lock so the invariant holds across concurrent
+    coroutines.  Suspends with ``asyncio.sleep`` rather than blocking the
+    event loop.
+    """
+    global _last_geocode_time
+    async with _geocode_lock:
+        now = time.monotonic()
+        wait = _MIN_GEOCODE_INTERVAL - (now - _last_geocode_time)
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _last_geocode_time = time.monotonic()
+
+
+async def get_coordinates(address: str) -> tuple[float, float] | None:
     """Return the latitude and longitude for an address string.
 
-    Results are memoised with an LRU cache keyed on the exact address
-    string, so identical addresses are only geocoded once per process
-    lifetime.  Geocoding can be disabled globally by setting
+    Results are memoised in a module-level dict (capped at
+    ``_GEOCODE_CACHE_MAXSIZE`` entries) keyed on the exact address string,
+    so identical addresses are only geocoded once per process lifetime.
+    When the cache is full the oldest entry is evicted before inserting the
+    new one.  Geocoding can be disabled globally by setting
     ``GEOCODE_ENABLED=false`` in the environment.
+
+    The function calls :func:`_throttle_geocode` before each live
+    Nominatim request to comply with the one-request-per-second policy.
+    The throttle is bypassed entirely when geocoding is disabled or when
+    the result is served from cache.
 
     Args:
         address: A full address string to geocode, e.g.
@@ -46,16 +75,24 @@ def get_coordinates(address: str) -> tuple[float, float] | None:
     if not settings.geocode_enabled:
         return None
 
+    if address in _geocode_cache:
+        return _geocode_cache[address]
+
+    await _throttle_geocode()
     geocoder = Nominatim(user_agent=settings.user_agent)
     try:
-        location = geocoder.geocode(address)
-        if location:
-            return (location.latitude, location.longitude)
+        location = await asyncio.to_thread(geocoder.geocode, address)
+        result: tuple[float, float] | None = (location.latitude, location.longitude) if location else None
     except Exception:
         # Silently swallow geocoding errors so a single bad address does
         # not abort the entire calendar generation.
-        pass
-    return None
+        result = None
+    if len(_geocode_cache) >= _GEOCODE_CACHE_MAXSIZE:
+        # Evict the oldest entry. Python dicts preserve insertion order, so
+        # next(iter(...)) is always the least-recently-inserted key.
+        _geocode_cache.pop(next(iter(_geocode_cache)))
+    _geocode_cache[address] = result
+    return result
 
 
 def format_address(address: str, place: str = "") -> str:
