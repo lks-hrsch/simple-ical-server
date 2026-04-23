@@ -29,6 +29,7 @@ _MIN_GEOCODE_INTERVAL: float = 1.0  # seconds — Nominatim policy
 # time.monotonic()'s epoch is undefined, so we can't use 0.0 safely.
 _last_geocode_time: float = -_MIN_GEOCODE_INTERVAL
 _geocode_cache: dict[str, tuple[float, float] | None] = {}
+_GEOCODE_CACHE_MAXSIZE: int = 128
 
 
 async def _throttle_geocode() -> None:
@@ -50,9 +51,11 @@ async def _throttle_geocode() -> None:
 async def get_coordinates(address: str) -> tuple[float, float] | None:
     """Return the latitude and longitude for an address string.
 
-    Results are memoised in a module-level dict keyed on the exact address
-    string, so identical addresses are only geocoded once per process
-    lifetime.  Geocoding can be disabled globally by setting
+    Results are memoised in a module-level dict (capped at
+    ``_GEOCODE_CACHE_MAXSIZE`` entries) keyed on the exact address string,
+    so identical addresses are only geocoded once per process lifetime.
+    When the cache is full the oldest entry is evicted before inserting the
+    new one.  Geocoding can be disabled globally by setting
     ``GEOCODE_ENABLED=false`` in the environment.
 
     The function calls :func:`_throttle_geocode` before each live
@@ -84,6 +87,10 @@ async def get_coordinates(address: str) -> tuple[float, float] | None:
         # Silently swallow geocoding errors so a single bad address does
         # not abort the entire calendar generation.
         result = None
+    if len(_geocode_cache) >= _GEOCODE_CACHE_MAXSIZE:
+        # Evict the oldest entry. Python dicts preserve insertion order, so
+        # next(iter(...)) is always the least-recently-inserted key.
+        _geocode_cache.pop(next(iter(_geocode_cache)))
     _geocode_cache[address] = result
     return result
 
