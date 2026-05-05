@@ -24,6 +24,13 @@
 - Pre-commit hooks use the same Nix commands and also run `pytest` on every commit.
 - Tag pushes matching `v*` build and publish a multi-arch Docker image.
 
+## Releases
+- `scripts/release.py` is the manual release helper.
+- It only runs on `main`, expects a clean tree, and bumps `pyproject.toml` plus `uv.lock`.
+- Use `python scripts/release.py --dry-run` first; the script does not run tests or lint before tagging.
+- It infers the bump from commits since the latest `v*` tag: `feat:` or `feature:` means minor, `BREAKING CHANGE` or `!:` means major, otherwise patch.
+- Pushes a `v*` tag trigger `.github/workflows/build.yml`, which publishes the GHCR image.
+
 ## Test Notes
 - Some tests patch `settings.data_dir`; prefer that pattern over changing global config.
 - Cache-sensitive geocoding tests clear `get_coordinates.cache_clear()` before asserting behavior.

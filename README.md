@@ -112,6 +112,36 @@ nix develop --command ruff check .
 nix develop --command ruff format .
 ```
 
+## Releases
+
+`scripts/release.py` is the local release helper. It:
+
+- requires `main` and a clean working tree
+- bumps the version in `pyproject.toml`
+- runs `uv lock`
+- commits the version bump
+- creates and pushes a `v*` tag
+
+Run a dry run first to see the computed bump:
+
+```bash
+python scripts/release.py --dry-run
+```
+
+Then run the release and confirm the prompt:
+
+```bash
+python scripts/release.py
+```
+
+The script infers the bump from commits since the latest `v*` tag:
+
+- `feat:` or `feature:` -> minor
+- `BREAKING CHANGE` or `!:` -> major
+- otherwise -> patch
+
+Tag pushes matching `v*` trigger `.github/workflows/build.yml`, which builds and publishes the multi-arch Docker image to GHCR.
+
 ## License
 
 This project is licensed under the **GNU Affero General Public License v3.0**. See the [LICENSE](LICENSE) file for details.
